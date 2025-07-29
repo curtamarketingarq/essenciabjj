@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Calendar, Clock, Users, CheckCircle, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Calendar, Clock, Users, CheckCircle, ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
+import { createTrialRegistration } from './lib/supabase';
 
 interface FormData {
   fullName: string;
@@ -100,6 +101,8 @@ function App() {
     selectedClass: null
   });
   const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Get all available classes
   const getAvailableClasses = (): ClassOption[] => {
@@ -155,10 +158,32 @@ function App() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Form submitted:', formData);
-    setCurrentStep('confirmation');
+    
+    if (!formData.selectedClass) return;
+    
+    setIsSubmitting(true);
+    setSubmitError(null);
+    
+    try {
+      await createTrialRegistration({
+        full_name: formData.fullName,
+        phone: formData.phone,
+        age: parseInt(formData.age),
+        class_day: formData.selectedClass.day,
+        class_time: formData.selectedClass.time,
+        class_name: formData.selectedClass.class,
+        specific_date: formData.selectedClass.specificDate
+      });
+      
+      setCurrentStep('confirmation');
+    } catch (error) {
+      console.error('Error submitting form:', error);
+      setSubmitError('Erro ao enviar agendamento. Tente novamente.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const resetForm = () => {
@@ -169,6 +194,7 @@ function App() {
       selectedClass: null
     });
     setAvailableDates([]);
+    setSubmitError(null);
     setCurrentStep('schedule');
   };
 
@@ -359,12 +385,25 @@ function App() {
                 </select>
               </div>
 
+              {submitError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+                  {submitError}
+                </div>
+              )}
+
               <button
                 type="submit"
-                disabled={!formData.fullName || !formData.phone || !formData.age || !formData.selectedClass?.specificDate}
-                className="w-full bg-red-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                disabled={!formData.fullName || !formData.phone || !formData.age || !formData.selectedClass?.specificDate || isSubmitting}
+                className="w-full bg-red-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
               >
-                Complete Registration
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  'Complete Registration'
+                )}
               </button>
             </form>
 
@@ -402,7 +441,7 @@ function App() {
           </div>
         </div>
         <p className="text-gray-600 mb-6">
-          We'll contact you soon to confirm your spot for the free trial class.
+        You're all set! Your free trial class is confirmed.
         </p>
         <button
           onClick={resetForm}

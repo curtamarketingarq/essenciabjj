@@ -65,12 +65,15 @@ const getNext15Dates = (dayName: string, timeSlot: string): string[] => {
   const dates: string[] = [];
   const dayIndex = days.indexOf(dayName);
   
+  // Converter para o índice correto do JavaScript (0=Sunday, 1=Monday, etc.)
+  const jsDay = dayIndex === 6 ? 0 : dayIndex + 1; // Sunday = 0, Monday = 1, etc.
+  
   let currentDate = new Date(today);
   let found = 0;
   
   // Find next 15 occurrences of the selected day
   while (found < 15) {
-    if (currentDate.getDay() === dayIndex) {
+    if (currentDate.getDay() === jsDay) {
       const dateStr = currentDate.toLocaleDateString('pt-BR', {
         day: '2-digit',
         month: '2-digit'

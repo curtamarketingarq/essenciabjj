@@ -9,7 +9,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Tipo para os dados do formulário
+// Tipo para os dados do formulário - estrutura completa da tabela
 export interface TrialRegistration {
   id?: string
   full_name: string
@@ -25,13 +25,20 @@ export interface TrialRegistration {
 
 // Função para criar um novo agendamento
 export async function createTrialRegistration(data: Omit<TrialRegistration, 'id' | 'created_at' | 'status'>) {
+  // Adicionar a data atual explicitamente para garantir que não seja NULL
+  const registrationData = {
+    ...data,
+    created_at: new Date().toISOString().split('T')[0] // Formato YYYY-MM-DD
+  }
+
   const { data: result, error } = await supabase
     .from('trial_registrations')
-    .insert([data])
+    .insert([registrationData])
     .select()
     .single()
 
   if (error) {
+    console.error('Supabase error:', error)
     throw error
   }
 

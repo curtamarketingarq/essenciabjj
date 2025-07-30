@@ -80,21 +80,19 @@ export default function CRM({ onLogout }: CRMProps) {
       return;
     }
     
-    // Handle lead movement between lanes
-    if (source.droppableId === destination.droppableId) {
-      // Same lane - just reorder leads within the lane
-      const laneLeads = getLeadsByStatus(source.droppableId);
-      const [movedLead] = laneLeads.splice(source.index, 1);
-      laneLeads.splice(destination.index, 0, movedLead);
-      return;
+    // Handle lead movement
+    if (source.droppableId === destination.droppableId && source.index === destination.index) {
+      return; // No change
     }
 
     // Different lanes - move lead to new status
     const newStatus = destination.droppableId;
     
     try {
+      // Update lead status in database
       await updateTrialRegistrationStatus(draggableId, newStatus);
       
+      // Update local state
       setLeads(prevLeads =>
         prevLeads.map(lead =>
           lead.id === draggableId ? { ...lead, status: newStatus } : lead
@@ -160,6 +158,29 @@ export default function CRM({ onLogout }: CRMProps) {
       delete newStages[laneId];
       return newStages;
     });
+  };
+
+  const moveLane = (laneId: string, direction: 'left' | 'right') => {
+    const sortedStages = getSortedStages();
+    const currentIndex = sortedStages.findIndex(([id]) => id === laneId);
+    
+    if (currentIndex === -1) return;
+    
+    const newIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
+    
+    if (newIndex < 0 || newIndex >= sortedStages.length) return;
+    
+    const updatedStages = { ...funnelStages };
+    
+    // Swap orders
+    const currentOrder = updatedStages[laneId].order;
+    const targetLaneId = sortedStages[newIndex][0];
+    const targetOrder = updatedStages[targetLaneId].order;
+    
+    updatedStages[laneId] = { ...updatedStages[laneId], order: targetOrder };
+    updatedStages[targetLaneId] = { ...updatedStages[targetLaneId], order: currentOrder };
+    
+    setFunnelStages(updatedStages);
   };
 
   const colorOptions = [
@@ -239,143 +260,136 @@ export default function CRM({ onLogout }: CRMProps) {
         )}
 
         {/* Kanban Board */}
-        <DragDropContext 
-          onDragEnd={handleDragEnd}
-          onDragStart={(start) => {
-            if (start.type === 'LANE') {
-              setIsDraggingLane(true);
-            }
-          }}
-        >
-          {/* Lane Reordering */}
-          <Droppable droppableId="lanes" direction="horizontal" type="LANE">
-            {(provided, snapshot) => (
-              <div
-                ref={provided.innerRef}
-                {...provided.droppableProps}
-                className={`flex gap-6 overflow-x-auto pb-4 ${
-                  snapshot.isDraggingOver ? 'bg-blue-50' : ''
-                } ${isDraggingLane ? 'bg-blue-50' : ''}`}
-              >
-                {getSortedStages().map(([status, config], index) => (
-                  <Draggable key={status} draggableId={`lane-${status}`} index={index} type="LANE">
-                    {(provided, snapshot) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.draggableProps}
-                        className={`bg-white rounded-lg shadow min-w-[300px] flex-shrink-0 ${
-                          snapshot.isDragging ? 'rotate-1 shadow-2xl' : ''
-                        }`}
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <div className="flex gap-6 overflow-x-auto pb-4">
+            {getSortedStages().map(([status, config], index) => (
+              <div key={status} className="bg-white rounded-lg shadow min-w-[300px] flex-shrink-0">
+                <div className={`${config.color} text-white px-4 py-3 rounded-t-lg flex justify-between items-center`}>
+                  <div className="flex items-center">
+                    <div className="flex flex-col mr-2">
+                      <button
+                        onClick={() => moveLane(status, 'left')}
+                        className="text-white hover:bg-black hover:bg-opacity-10 p-0.5 rounded text-xs leading-none mb-0.5"
+                        disabled={index === 0}
+                        title="Mover para esquerda"
                       >
-                        <div className={`${config.color} text-white px-4 py-3 rounded-t-lg flex justify-between items-center`}>
-                          <div className="flex items-center">
-                            <div
-                              {...provided.dragHandleProps}
-                              className="mr-2 cursor-grab active:cursor-grabbing hover:bg-black hover:bg-opacity-10 p-1 rounded"
-                            >
-                              <GripVertical className="w-4 h-4" />
-                            </div>
-                            <div>
-                              <h3 className="font-semibold text-sm">{config.title}</h3>
-                              <p className="text-xs opacity-90">{getLeadsByStatus(status).length} leads</p>
-                            </div>
-                          </div>
-                          {config.editable && (
-                            <button
-                              onClick={() => handleDeleteLane(status)}
-                              className="text-white hover:text-red-200 transition-colors p-1 rounded hover:bg-black hover:bg-opacity-10"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                        
-                        <Droppable droppableId={status} type="LEAD">
+                        ←
+                      </button>
+                      <button
+                        onClick={() => moveLane(status, 'right')}
+                        className="text-white hover:bg-black hover:bg-opacity-10 p-0.5 rounded text-xs leading-none"
+                        disabled={index === getSortedStages().length - 1}
+                        title="Mover para direita"
+                      >
+                        →
+                      </button>
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm">{config.title}</h3>
+                      <p className="text-xs opacity-90">{getLeadsByStatus(status).length} leads</p>
+                    </div>
+                  </div>
+                  {config.editable && (
+                    <button
+                      onClick={() => handleDeleteLane(status)}
+                      className="text-white hover:text-red-200 transition-colors p-1 rounded hover:bg-black hover:bg-opacity-10"
+                      title="Deletar lane"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                
+                <Droppable droppableId={status}>
+                  {(provided, snapshot) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      className={`p-4 min-h-[400px] max-h-[600px] overflow-y-auto transition-colors ${
+                        snapshot.isDraggingOver ? 'bg-blue-50 border-2 border-blue-300 border-dashed' : ''
+                      }`}
+                    >
+                      {getLeadsByStatus(status).map((lead, index) => (
+                        <Draggable key={lead.id} draggableId={lead.id} index={index}>
                           {(provided, snapshot) => (
                             <div
                               ref={provided.innerRef}
-                              {...provided.droppableProps}
-                              className={`p-4 min-h-[400px] max-h-[600px] overflow-y-auto transition-colors ${
-                                snapshot.isDraggingOver ? 'bg-blue-50' : ''
+                              {...provided.draggableProps}
+                              {...provided.dragHandleProps}
+                              className={`bg-white border rounded-lg p-3 mb-3 shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group ${
+                                snapshot.isDragging ? 'rotate-2 shadow-lg ring-2 ring-blue-300 bg-blue-50' : ''
                               }`}
+                              onClick={(e) => {
+                                if (!snapshot.isDragging) {
+                                  e.stopPropagation();
+                                  handleLeadClick(lead);
+                                }
+                              }}
                             >
-                              {getLeadsByStatus(status).map((lead, index) => (
-                                <Draggable key={lead.id} draggableId={lead.id} index={index} type="LEAD">
-                                  {(provided, snapshot) => (
-                                    <div
-                                      ref={provided.innerRef}
-                                      {...provided.draggableProps}
-                                      {...provided.dragHandleProps}
-                                      className={`bg-white border rounded-lg p-3 mb-3 shadow-sm hover:shadow-md transition-all cursor-pointer group ${
-                                        snapshot.isDragging ? 'rotate-2 shadow-lg ring-2 ring-blue-300' : ''
-                                      }`}
-                                      onClick={(e) => {
-                                        if (!snapshot.isDragging) {
-                                          handleLeadClick(lead);
-                                        }
-                                      }}
-                                    >
-                                      <div className="flex items-start justify-between mb-2">
-                                        <h4 className="font-semibold text-gray-900 text-sm pr-2">{lead.full_name}</h4>
-                                        <div className="flex items-center space-x-1 flex-shrink-0">
-                                          <span className="text-xs text-gray-500">{lead.age} anos</span>
-                                          <Eye className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                        </div>
-                                      </div>
-                                      
-                                      <div className="space-y-1 text-xs text-gray-600">
-                                        <div className="flex items-center">
-                                          <Phone className="w-3 h-3 mr-1 flex-shrink-0" />
-                                          <span className="truncate">{lead.phone}</span>
-                                        </div>
-                                        
-                                        <div className="flex items-center">
-                                          <Calendar className="w-3 h-3 mr-1 flex-shrink-0" />
-                                          <span className="truncate">{lead.class_day}</span>
-                                        </div>
-                                        
-                                        <div className="flex items-center">
-                                          <User className="w-3 h-3 mr-1 flex-shrink-0" />
-                                          <span className="truncate">{lead.class_name}</span>
-                                        </div>
-                                        
-                                        {lead.specific_date && (
-                                          <div className="flex items-center">
-                                            <Clock className="w-3 h-3 mr-1 flex-shrink-0" />
-                                            <span className="truncate">{lead.specific_date}</span>
-                                          </div>
-                                        )}
-                                        
-                                        {lead.created_at && (
-                                          <div className="text-xs text-gray-400 mt-2">
-                                            {formatDate(lead.created_at)}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-                                </Draggable>
-                              ))}
-                              {provided.placeholder}
-                              
-                              {/* Empty state */}
-                              {getLeadsByStatus(status).length === 0 && !snapshot.isDraggingOver && (
-                                <div className="text-center py-8 text-gray-400">
-                                  <User className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                                  <p className="text-sm">Nenhum lead nesta etapa</p>
+                              <div className="flex items-start justify-between mb-2">
+                                <h4 className="font-semibold text-gray-900 text-sm pr-2">{lead.full_name}</h4>
+                                <div className="flex items-center space-x-1 flex-shrink-0">
+                                  <span className="text-xs text-gray-500">{lead.age} anos</span>
+                                  <Eye className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
                                 </div>
-                              )}
+                              </div>
+                              
+                              <div className="space-y-1 text-xs text-gray-600">
+                                <div className="flex items-center">
+                                  <Phone className="w-3 h-3 mr-1 flex-shrink-0" />
+                                  <span className="truncate">{lead.phone}</span>
+                                </div>
+                                
+                                <div className="flex items-center">
+                                  <Calendar className="w-3 h-3 mr-1 flex-shrink-0" />
+                                  <span className="truncate">{lead.class_day}</span>
+                                </div>
+                                
+                                <div className="flex items-center">
+                                  <User className="w-3 h-3 mr-1 flex-shrink-0" />
+                                  <span className="truncate">{lead.class_name}</span>
+                                </div>
+                                
+                                {lead.specific_date && (
+                                  <div className="flex items-center">
+                                    <Clock className="w-3 h-3 mr-1 flex-shrink-0" />
+                                    <span className="truncate">{lead.specific_date}</span>
+                                  </div>
+                                )}
+                                
+                                {lead.created_at && (
+                                  <div className="text-xs text-gray-400 mt-2">
+                                    {formatDate(lead.created_at)}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           )}
-                        </Droppable>
-                      </div>
-                    )}
-                  </Draggable>
-                ))}
-                {provided.placeholder}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                      
+                      {/* Empty state */}
+                      {getLeadsByStatus(status).length === 0 && !snapshot.isDraggingOver && (
+                        <div className="text-center py-8 text-gray-400">
+                          <User className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">Nenhum lead nesta etapa</p>
+                        </div>
+                      )}
+                      
+                      {/* Drop zone indicator */}
+                      {snapshot.isDraggingOver && getLeadsByStatus(status).length === 0 && (
+                        <div className="text-center py-8 text-blue-500">
+                          <Plus className="w-8 h-8 mx-auto mb-2" />
+                          <p className="text-sm font-medium">Solte o lead aqui</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Droppable>
               </div>
-            )}
-          </Droppable>
+            ))}
+          </div>
         </DragDropContext>
       </div>
 

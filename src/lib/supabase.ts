@@ -58,3 +58,27 @@ export async function getTrialRegistrations() {
 
   return data
 }
+
+// Função para atualizar o status de um agendamento
+export async function updateTrialRegistrationStatus(id: string, status: string) {
+  const { data, error } = await supabase
+    .from('trial_registrations')
+    .update({ status })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return data
+}
+
+// Função para autenticação simples (hardcoded)
+export async function authenticateUser(email: string, password: string): Promise<boolean> {
+  const validEmail = 'essenciajiujitsuacademy@gmail.com'
+  const validPassword = 'Brazil92!'
+  
+  return email === validEmail && password === validPassword
+}

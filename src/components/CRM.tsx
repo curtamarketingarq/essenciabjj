@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
-import { Phone, Mail, Calendar, User, Clock, LogOut, RefreshCw, Eye, Plus, X, Edit2, Trash2, GripVertical } from 'lucide-react';
+import { Phone, Mail, Calendar, User, Clock, LogOut, RefreshCw, Eye, Plus, X, Edit2, Trash2, GripVertical, ChevronDown, ArrowRight } from 'lucide-react';
 import { getTrialRegistrations, updateTrialRegistrationStatus } from '../lib/supabase';
 import type { TrialRegistration } from '../lib/supabase';
 
@@ -41,6 +41,7 @@ export default function CRM({ onLogout }: CRMProps) {
   const [newLaneColor, setNewLaneColor] = useState('bg-indigo-500');
   const [funnelStages, setFunnelStages] = useState<Record<string, FunnelStage>>(DEFAULT_FUNNEL_STAGES);
   const [isDraggingLane, setIsDraggingLane] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   const loadLeads = async () => {
     try {
@@ -58,6 +59,18 @@ export default function CRM({ onLogout }: CRMProps) {
   useEffect(() => {
     loadLeads();
   }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => {
+      setOpenDropdown(null);
+    };
+
+    if (openDropdown) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [openDropdown]);
 
   const handleDragEnd = async (result: DropResult) => {
     if (!result.destination) return;
@@ -183,11 +196,70 @@ export default function CRM({ onLogout }: CRMProps) {
     setFunnelStages(updatedStages);
   };
 
+  const moveLeadToStatus = async (leadId: string, newStatus: string) => {
+    try {
+      await updateTrialRegistrationStatus(leadId, newStatus);
+      
+      setLeads(prevLeads =>
+        prevLeads.map(lead =>
+          lead.id === leadId ? { ...lead, status: newStatus } : lead
+        )
+      );
+    } catch (err) {
+      console.error('Erro ao atualizar status:', err);
+      setError('Erro ao atualizar status do lead');
+    }
+  };
+
   const colorOptions = [
     'bg-indigo-500', 'bg-purple-500', 'bg-pink-500', 'bg-rose-500',
     'bg-orange-500', 'bg-amber-500', 'bg-lime-500', 'bg-teal-500',
     'bg-cyan-500', 'bg-sky-500', 'bg-violet-500', 'bg-fuchsia-500'
   ];
+
+  // Component for lead status dropdown
+  const LeadStatusDropdown = ({ lead }: { lead: Lead }) => {
+    const isOpen = openDropdown === lead.id;
+    const currentStage = funnelStages[lead.status];
+    
+    return (
+      <div className="relative">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpenDropdown(isOpen ? null : lead.id);
+          }}
+          className="flex items-center space-x-1 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+        >
+          <div className={`w-2 h-2 rounded-full ${currentStage?.color || 'bg-gray-500'}`}></div>
+          <span className="text-gray-700 max-w-[80px] truncate">{currentStage?.title || lead.status}</span>
+          <ChevronDown className="w-3 h-3 text-gray-500" />
+        </button>
+        
+        {isOpen && (
+          <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[160px]">
+            {getSortedStages()
+              .filter(([statusId]) => statusId !== lead.status)
+              .map(([statusId, config]) => (
+                <button
+                  key={statusId}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    moveLeadToStatus(lead.id, statusId);
+                    setOpenDropdown(null);
+                  }}
+                  className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+                >
+                  <div className={`w-3 h-3 rounded-full ${config.color}`}></div>
+                  <span className="text-gray-700">{config.title}</span>
+                  <ArrowRight className="w-3 h-3 text-gray-400 ml-auto" />
+                </button>
+              ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (isLoading) {
     return (
@@ -260,137 +332,133 @@ export default function CRM({ onLogout }: CRMProps) {
         )}
 
         {/* Kanban Board */}
-        <DragDropContext onDragEnd={handleDragEnd}>
-          <div className="flex gap-6 overflow-x-auto pb-4">
-            {getSortedStages().map(([status, config], index) => (
-              <div key={status} className="bg-white rounded-lg shadow min-w-[300px] flex-shrink-0">
-                <div className={`${config.color} text-white px-4 py-3 rounded-t-lg flex justify-between items-center`}>
-                  <div className="flex items-center">
-                    <div className="flex flex-col mr-2">
-                      <button
-                        onClick={() => moveLane(status, 'left')}
-                        className="text-white hover:bg-black hover:bg-opacity-10 p-0.5 rounded text-xs leading-none mb-0.5"
-                        disabled={index === 0}
-                        title="Mover para esquerda"
-                      >
-                        ←
-                      </button>
-                      <button
-                        onClick={() => moveLane(status, 'right')}
-                        className="text-white hover:bg-black hover:bg-opacity-10 p-0.5 rounded text-xs leading-none"
-                        disabled={index === getSortedStages().length - 1}
-                        title="Mover para direita"
-                      >
-                        →
-                      </button>
+        <div className="flex gap-6 overflow-x-auto pb-4">
+          {getSortedStages().map(([status, config], index) => (
+            <div key={status} className="bg-white rounded-lg shadow min-w-[320px] flex-shrink-0">
+              <div className={`${config.color} text-white px-4 py-3 rounded-t-lg flex justify-between items-center`}>
+                <div className="flex items-center">
+                  <div className="flex flex-col mr-2">
+                    <button
+                      onClick={() => moveLane(status, 'left')}
+                      className="text-white hover:bg-black hover:bg-opacity-10 p-0.5 rounded text-xs leading-none mb-0.5 disabled:opacity-50"
+                      disabled={index === 0}
+                      title="Mover para esquerda"
+                    >
+                      ←
+                    </button>
+                    <button
+                      onClick={() => moveLane(status, 'right')}
+                      className="text-white hover:bg-black hover:bg-opacity-10 p-0.5 rounded text-xs leading-none disabled:opacity-50"
+                      disabled={index === getSortedStages().length - 1}
+                      title="Mover para direita"
+                    >
+                      →
+                    </button>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sm">{config.title}</h3>
+                    <p className="text-xs opacity-90">{getLeadsByStatus(status).length} leads</p>
+                  </div>
+                </div>
+                {config.editable && (
+                  <button
+                    onClick={() => handleDeleteLane(status)}
+                    className="text-white hover:text-red-200 transition-colors p-1 rounded hover:bg-black hover:bg-opacity-10"
+                    title="Deletar lane"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              
+              <div className="p-4 min-h-[400px] max-h-[600px] overflow-y-auto">
+                {getLeadsByStatus(status).map((lead, index) => (
+                  <div
+                    key={lead.id}
+                    className="bg-white border rounded-lg p-3 mb-3 shadow-sm hover:shadow-md transition-all group"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <h4 className="font-semibold text-gray-900 text-sm pr-2">{lead.full_name}</h4>
+                      <div className="flex items-center space-x-1 flex-shrink-0">
+                        <span className="text-xs text-gray-500">{lead.age} anos</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleLeadClick(lead);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Eye className="w-3 h-3 text-gray-400 hover:text-gray-600" />
+                        </button>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-sm">{config.title}</h3>
-                      <p className="text-xs opacity-90">{getLeadsByStatus(status).length} leads</p>
+                    
+                    <div className="space-y-1 text-xs text-gray-600 mb-3">
+                      <div className="flex items-center">
+                        <Phone className="w-3 h-3 mr-1 flex-shrink-0" />
+                        <span className="truncate">{lead.phone}</span>
+                      </div>
+                      
+                      <div className="flex items-center">
+                        <Calendar className="w-3 h-3 mr-1 flex-shrink-0" />
+                        <span className="truncate">{lead.class_day}</span>
+                      </div>
+                      
+                      <div className="flex items-center">
+                        <User className="w-3 h-3 mr-1 flex-shrink-0" />
+                        <span className="truncate">{lead.class_name}</span>
+                      </div>
+                      
+                      {lead.specific_date && (
+                        <div className="flex items-center">
+                          <Clock className="w-3 h-3 mr-1 flex-shrink-0" />
+                          <span className="truncate">{lead.specific_date}</span>
+                        </div>
+                      )}
+                      
+                      {lead.created_at && (
+                        <div className="text-xs text-gray-400 mt-2">
+                          {formatDate(lead.created_at)}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Status Controls */}
+                    <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+                      <LeadStatusDropdown lead={lead} />
+                      <div className="flex space-x-1">
+                        {getSortedStages()
+                          .filter(([statusId]) => statusId !== lead.status)
+                          .slice(0, 2)
+                          .map(([statusId, config]) => (
+                            <button
+                              key={statusId}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                moveLeadToStatus(lead.id, statusId);
+                              }}
+                              className={`px-2 py-1 text-xs rounded ${config.color} text-white hover:opacity-80 transition-opacity`}
+                              title={`Mover para ${config.title}`}
+                            >
+                              →
+                            </button>
+                          ))}
+                      </div>
                     </div>
                   </div>
-                  {config.editable && (
-                    <button
-                      onClick={() => handleDeleteLane(status)}
-                      className="text-white hover:text-red-200 transition-colors p-1 rounded hover:bg-black hover:bg-opacity-10"
-                      title="Deletar lane"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
+                ))}
                 
-                <Droppable droppableId={status}>
-                  {(provided, snapshot) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                      className={`p-4 min-h-[400px] max-h-[600px] overflow-y-auto transition-colors ${
-                        snapshot.isDraggingOver ? 'bg-blue-50 border-2 border-blue-300 border-dashed' : ''
-                      }`}
-                    >
-                      {getLeadsByStatus(status).map((lead, index) => (
-                        <Draggable key={lead.id} draggableId={lead.id} index={index}>
-                          {(provided, snapshot) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              className={`bg-white border rounded-lg p-3 mb-3 shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group ${
-                                snapshot.isDragging ? 'rotate-2 shadow-lg ring-2 ring-blue-300 bg-blue-50' : ''
-                              }`}
-                              onClick={(e) => {
-                                if (!snapshot.isDragging) {
-                                  e.stopPropagation();
-                                  handleLeadClick(lead);
-                                }
-                              }}
-                            >
-                              <div className="flex items-start justify-between mb-2">
-                                <h4 className="font-semibold text-gray-900 text-sm pr-2">{lead.full_name}</h4>
-                                <div className="flex items-center space-x-1 flex-shrink-0">
-                                  <span className="text-xs text-gray-500">{lead.age} anos</span>
-                                  <Eye className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                </div>
-                              </div>
-                              
-                              <div className="space-y-1 text-xs text-gray-600">
-                                <div className="flex items-center">
-                                  <Phone className="w-3 h-3 mr-1 flex-shrink-0" />
-                                  <span className="truncate">{lead.phone}</span>
-                                </div>
-                                
-                                <div className="flex items-center">
-                                  <Calendar className="w-3 h-3 mr-1 flex-shrink-0" />
-                                  <span className="truncate">{lead.class_day}</span>
-                                </div>
-                                
-                                <div className="flex items-center">
-                                  <User className="w-3 h-3 mr-1 flex-shrink-0" />
-                                  <span className="truncate">{lead.class_name}</span>
-                                </div>
-                                
-                                {lead.specific_date && (
-                                  <div className="flex items-center">
-                                    <Clock className="w-3 h-3 mr-1 flex-shrink-0" />
-                                    <span className="truncate">{lead.specific_date}</span>
-                                  </div>
-                                )}
-                                
-                                {lead.created_at && (
-                                  <div className="text-xs text-gray-400 mt-2">
-                                    {formatDate(lead.created_at)}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
-                      {provided.placeholder}
-                      
-                      {/* Empty state */}
-                      {getLeadsByStatus(status).length === 0 && !snapshot.isDraggingOver && (
-                        <div className="text-center py-8 text-gray-400">
-                          <User className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">Nenhum lead nesta etapa</p>
-                        </div>
-                      )}
-                      
-                      {/* Drop zone indicator */}
-                      {snapshot.isDraggingOver && getLeadsByStatus(status).length === 0 && (
-                        <div className="text-center py-8 text-blue-500">
-                          <Plus className="w-8 h-8 mx-auto mb-2" />
-                          <p className="text-sm font-medium">Solte o lead aqui</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </Droppable>
+                {/* Empty state */}
+                {getLeadsByStatus(status).length === 0 && (
+                  <div className="text-center py-8 text-gray-400">
+                    <User className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Nenhum lead nesta etapa</p>
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-        </DragDropContext>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Modal de Detalhes do Lead */}
